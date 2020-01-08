@@ -18,7 +18,7 @@ object Main extends IOApp {
       .resource(Blocker[IO])
       .flatMap { blocker =>
         BlazeServerBuilder[IO]
-          .bindHttp(port = 8000)
+          .bindHttp(port = 8080)
           .withHttpApp(httpApp[IO](blocker))
           .serve
       }
