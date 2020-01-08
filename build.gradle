@@ -27,12 +27,14 @@ ext {
     circeVersion = "0.11.1"
     scalatestVersion = "3.0.0"
     dockerPlugin = "6.0.0"
+    logbackVersion = "1.2.3"
 }
 
 dependencies {
     implementation "org.scala-lang:scala-library:$scalaVersion"
     testCompile "org.scalatest:scalatest_2.11:$scalatestVersion"
 
+    compile "ch.qos.logback:logback-classic:$logbackVersion"
     compile "org.http4s:http4s-blaze-server_2.12:$http4sVersion"
     compile "org.http4s:http4s-circe_2.12:$http4sVersion"
     compile "org.http4s:http4s-dsl_2.12:$http4sVersion"
@@ -66,7 +68,6 @@ tasks.create('createDockerfile', Dockerfile) {
     copyFile("opt/${jarName}-${version}.jar", "/opt/${jarName}-${version}.jar")
     entryPoint('java')
     workingDir('/opt')
-    exposePort(8080)
     runCommand('useradd -ms /bin/bash newuser')
     user('newuser')
     defaultCommand('-jar', "$jarName-${version}.jar")
@@ -81,4 +82,10 @@ task startService(type: Exec) {
     dependsOn buildImage
     executable 'docker'
     args "run", "-d", "-p", '8080:8080', '--name', "$jarName", '--rm', "pashnik/$jarName:$version"
+}
+
+task startServiceWithoutDocker(type: Exec) {
+    dependsOn jar
+    executable 'java'
+    args '-jar', "./build/libs/${jarName}-${version}.jar"
 }

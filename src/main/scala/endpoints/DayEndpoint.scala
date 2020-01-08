@@ -7,14 +7,16 @@ import org.http4s.{HttpRoutes, ParseFailure}
 import io.circe.generic.auto._
 import models.RequestModels._
 import models.ResponseModels._
+import org.log4s.Logger
 import utils.TimeUtils._
+import cats.syntax.flatMap._
 
 object EndpointsRouter {
-  def dayEndpoint[F[_]: Sync] = new DayEndpoint[F].routes
+  def dayEndpoint[F[_]: Sync](implicit logger: Logger) = new DayEndpoint[F].routes
 }
 
 trait Endpoint[F[_]] {
-  val routes: HttpRoutes[F]
+  def routes(implicit logger: Logger): HttpRoutes[F]
 }
 
 class DayEndpoint[F[_]: Sync] extends Http4sDsl[F] with Endpoint[F] {
@@ -22,7 +24,7 @@ class DayEndpoint[F[_]: Sync] extends Http4sDsl[F] with Endpoint[F] {
   object YearMatcher extends ValidatingQueryParamDecoderMatcher[Year]("year")
   object DateMatcher extends ValidatingQueryParamDecoderMatcher[CurrentDate]("currentDate")
 
-  val routes: HttpRoutes[F] = {
+  def routes(implicit logger: Logger): HttpRoutes[F] = {
     val collectFailures: NonEmptyList[ParseFailure] => String =
       _.toList.map(_.sanitized).mkString("\n")
 
@@ -30,12 +32,16 @@ class DayEndpoint[F[_]: Sync] extends Http4sDsl[F] with Endpoint[F] {
       case GET -> Root :? YearMatcher(year) =>
         year.fold(
             nelE => BadRequest(collectFailures(nelE))
-          , year => Ok(Response.ok(ComplicatedLogic.day256(year)))
+          , year =>
+            Sync[F].delay(logger.info(s"get following request: $year")) >>
+              Ok(Response.ok(ComplicatedLogic.day256(year)))
         )
       case GET -> Root :? DateMatcher(date) =>
         date.fold(
             nelE => BadRequest(collectFailures(nelE))
-          , date => Ok(Response.ok(ComplicatedLogic.daysBetween(date)))
+          , date =>
+            Sync[F].delay(logger.info(s"get following request: $date")) >>
+              Ok(Response.ok(ComplicatedLogic.daysBetween(date)))
         )
     }
   }
@@ -53,9 +59,9 @@ object ComplicatedLogic {
 
   def daysBetween(date: CurrentDate) = {
     val current = inDays(date)
-    DayResp.of(
-        if (current < progDay) progDay - current
-      else progDay + rest(date.year)(current)
-    )
+    DayResp.of(current match {
+      case lessOrEq if lessOrEq <= progDay => progDay - lessOrEq
+      case more if more > progDay          => progDay + rest(date.year)(more)
+    })
   }
 }
