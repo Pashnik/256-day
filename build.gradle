@@ -1,0 +1,83 @@
+plugins {
+    id 'com.bmuschko.docker-remote-api' version '6.1.1'
+    id 'scala'
+    id 'application'
+    id 'java'
+}
+
+group 'ru.kspt'
+version '1.0'
+
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+sourceSets {
+    test {
+        scala {
+            srcDirs = ['src/test/scala']
+        }
+    }
+}
+
+ext {
+    scalaVersion = "2.12"
+    http4sVersion = "0.20.11"
+    circeVersion = "0.11.1"
+    scalatestVersion = "3.0.0"
+    dockerPlugin = "6.0.0"
+}
+
+dependencies {
+    implementation "org.scala-lang:scala-library:$scalaVersion"
+    testCompile "org.scalatest:scalatest_2.11:$scalatestVersion"
+
+    compile "org.http4s:http4s-blaze-server_2.12:$http4sVersion"
+    compile "org.http4s:http4s-circe_2.12:$http4sVersion"
+    compile "org.http4s:http4s-dsl_2.12:$http4sVersion"
+    compile "io.circe:circe-generic_2.12:$circeVersion"
+    compile "io.circe:circe-literal_2.12:$circeVersion"
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': "Main"
+    }
+    from {
+        configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    baseName("microservice")
+}
+
+task copyJar(type: Copy) {
+    dependsOn(jar)
+    from 'build/libs'
+    into 'build/docker/opt'
+}
+
+import com.bmuschko.gradle.docker.tasks.image.*
+
+def jarName = jar.archiveBaseName.get()
+
+tasks.create('createDockerfile', Dockerfile) {
+    dependsOn('copyJar')
+    from('openjdk:11.0.2')
+    copyFile("opt/${jarName}-${version}.jar", "/opt/${jarName}-${version}.jar")
+    entryPoint('java')
+    workingDir('/opt')
+    runCommand('useradd -ms /bin/bash newuser')
+    user('newuser')
+    defaultCommand('-jar', "$jarName-${version}.jar")
+}
+
+task buildImage(type: DockerBuildImage) {
+    dependsOn createDockerfile
+    images.add("pashnik/${jarName}:1.0")
+}
+
+task startService(type: Exec) {
+    dependsOn buildImage
+    executable 'docker'
+    args "run", "-d", "-p", '8080:8080', '--name', "$jarName", '--rm', "pashnik/$jarName:$version"
+}
